@@ -1,7 +1,7 @@
 # 模型配置：所有参数名、格式与 PointTransformerV3.__init__ 完全对齐
 model:
   type: PT-v3m1                # 正确：与模型注册名 @MODELS.register_module('PT-v3m1') 一致
-  in_channels: 9               # 正确：你的9维输入特征（u/v/BeamAz + 邻域均值/标准差）
+  in_channels: 6               # 正确：你的9维输入特征（u/v/BeamAz + 邻域均值/标准差）
   num_classes: 5               # 正确：风切变二分类（有/无风切变）
   cls_mode: False              # 必需：False=分割/检测模式（保留解码器），True=分类模式（无解码器），风切变检测需设为False
   order: ["z", "z-trans"]      # 必需：模型默认的点云序列化顺序，与 __init__ 默认值一致
@@ -49,18 +49,21 @@ data:
     k_neighbors: 16  # 邻域点数
     radius: 100.0      # 邻域半径
     transform:
-      - type: NormalizeWind  # 风速标准化
-        u_mean: -0.7983   # 替换为真实u均值
-        u_std: 2.6732     # 替换为真实u标准差
-        v_mean: 2.0401    # 替换为真实v均值
-        v_std: 3.1915     # 替换为真实v标准差
-        beamaz_mean: 184.0494  # 替换为真实beamaz均值
-        beamaz_std: 100.2158   # 替换为真实beamaz标准差
-      - type: WindShearGridSample     # 网格采样
-        grid_size: [122.6, 118.0, 5.4]
+      # 【修改】步骤 1: 采样、SMOTE、欠采样（在 *原始* 6D 数据上运行）
+      - type: WindShearGridSample
+        grid_size: 80.0
         min_points: 50
-        adaptive: False
-      - type: ToTensor       # 转换为张量
+        adaptive: True
+        balance_data: True # 开启训练集平衡
+      # 【修改】步骤 2: 归一化（在 *采样后* 的数据上运行）
+      - type: NormalizeFeatures
+        # !! [重要] !! 您必须重新计算并替换以下 3D+6D 统计数据
+        coord_mean: [ 0.0,  0.0, 500.0]         # 占位符 (x,y,z)
+        coord_std: [1000.0, 1000.0, 300.0]      # 占位符 (x,y,z)
+        feat_mean: [ 0, 0, 0, 0, 0, 0]          # 占位符 (6D: u,v,sin,cos,u_std,v_std)
+        feat_std: [ 1, 1, 1, 1, 1, 1]          # 占位符 (6D)
+      # 步骤 3: 转为 Tensor
+      - type: ToTensor
 
   val:
     type: WindShearDataset
@@ -69,17 +72,17 @@ data:
     k_neighbors: 16
     radius: 100.0
     transform:
-      - type: NormalizeWind
-        u_mean: -0.7983   # 替换为真实u均值
-        u_std: 2.6732     # 替换为真实u标准差
-        v_mean: 2.0401    # 替换为真实v均值
-        v_std: 3.1915     # 替换为真实v标准差
-        beamaz_mean: 184.0494  # 替换为真实beamaz均值
-        beamaz_std: 100.2158   # 替换为真实beamaz标准差
       - type: WindShearGridSample
-        grid_size: [122.6, 118.0, 5.4]
+        grid_size: 80.0
         min_points: 50
-        adaptive: False
+        adaptive: True
+        balance_data: False # 【修改】关闭验证集平衡
+      - type: NormalizeFeatures
+        # !! [重要] !! 使用与 train 集相同的统计数据
+        coord_mean: [ 0.0,  0.0, 500.0]
+        coord_std: [1000.0, 1000.0, 300.0]
+        feat_mean: [ 0, 0, 0, 0, 0, 0]
+        feat_std: [ 1, 1, 1, 1, 1, 1]
       - type: ToTensor
 
   test:
@@ -89,19 +92,17 @@ data:
     k_neighbors: 16
     radius: 100.0
     transform:
-      - type: NormalizeWind
-        u_mean: -0.7983   # 替换为真实u均值
-        u_std: 2.6732     # 替换为真实u标准差
-        v_mean: 2.0401    # 替换为真实v均值
-        v_std: 3.1915     # 替换为真实v标准差
-        beamaz_mean: 184.0494  # 替换为真实beamaz均值
-        beamaz_std: 100.2158   # 替换为真实beamaz标准差
       - type: WindShearGridSample
-        grid_size: [122.6, 118.0, 5.4]
+        grid_size: 80.0
         min_points: 50
-        adaptive: False
+        adaptive: True
+        balance_data: False
+      - type: NormalizeFeatures
+        coord_mean: [ 0.0,  0.0, 500.0]
+        coord_std: [1000.0, 1000.0, 300.0]
+        feat_mean: [ 0, 0, 0, 0, 0, 0]
+        feat_std: [ 1, 1, 1, 1, 1, 1]
       - type: ToTensor
-
 # 训练配置
 train:
   epochs: 100
